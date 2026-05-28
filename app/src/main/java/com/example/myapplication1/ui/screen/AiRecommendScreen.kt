@@ -204,11 +204,14 @@ fun AiRecommendScreen(
 
 @Composable
 fun ChatBubble(message: LunchViewModel.ChatMessage, isUser: Boolean, isStreaming: Boolean = false) {
-    val cursorVisible by produceState(initialValue = true) {
-        while (true) {
+    var cursorVisible by remember { mutableStateOf(true) }
+
+    LaunchedEffect(isStreaming) {
+        while (isStreaming) {
             delay(530)
-            value = !value
+            cursorVisible = !cursorVisible
         }
+        cursorVisible = false
     }
 
     Row(
