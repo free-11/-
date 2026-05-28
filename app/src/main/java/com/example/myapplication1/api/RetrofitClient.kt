@@ -50,6 +50,7 @@ object RetrofitClient {
                 val json = """{"userId":"$userId","message":"${message.replace("\"", "\\\"")}"}"""
                 val request = Request.Builder()
                     .url("${BASE_URL}api/ai/recommend/stream")
+                    .header("Accept", "text/event-stream")
                     .post(json.toRequestBody("application/json".toMediaType()))
                     .build()
 
