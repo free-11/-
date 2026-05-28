@@ -250,7 +250,7 @@ fun ChatBubble(message: LunchViewModel.ChatMessage, isUser: Boolean) {
 @Composable
 fun ChatThinkingIndicator() {
     Row(
-        modifier = Modifier.padding(start = 44.dp, vertical = 12.dp),
+        modifier = Modifier.padding(start = 44.dp).padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Surface(
