@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -125,14 +126,14 @@ fun AiRecommendScreen(
                     contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(chatMessages, key = { msg -> "${msg.role}-${msg.content.hashCode()}" }) { msg ->
-                        ChatBubble(message = msg, isUser = msg.role == "user")
-                    }
-
-                    if (isAiThinking) {
-                        item {
-                            ChatThinkingIndicator()
-                        }
+                    items(chatMessages, key = { msg -> "${msg.role}-${msg.content.hashCode()}" }) { index ->
+                        val msg = chatMessages[index]
+                        val isLastAssistant = msg.role == "assistant" && index == chatMessages.lastIndex
+                        ChatBubble(
+                            message = msg,
+                            isUser = msg.role == "user",
+                            isStreaming = isLastAssistant && isAiThinking
+                        )
                     }
                 }
             }
@@ -202,7 +203,14 @@ fun AiRecommendScreen(
 }
 
 @Composable
-fun ChatBubble(message: LunchViewModel.ChatMessage, isUser: Boolean) {
+fun ChatBubble(message: LunchViewModel.ChatMessage, isUser: Boolean, isStreaming: Boolean = false) {
+    val cursorVisible by produceState(initialValue = true) {
+        while (true) {
+            delay(530)
+            value = !value
+        }
+    }
+
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
@@ -227,12 +235,20 @@ fun ChatBubble(message: LunchViewModel.ChatMessage, isUser: Boolean) {
             color = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
             shadowElevation = 0.5.dp
         ) {
-            Text(
-                message.content,
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (isUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-            )
+            Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                Text(
+                    message.content,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (isUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                )
+                if (isStreaming && cursorVisible) {
+                    Text(
+                        "▌",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (isUser) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                    )
+                }
+            }
         }
 
         if (isUser) {
@@ -247,28 +263,3 @@ fun ChatBubble(message: LunchViewModel.ChatMessage, isUser: Boolean) {
     }
 }
 
-@Composable
-fun ChatThinkingIndicator() {
-    Row(
-        modifier = Modifier.padding(start = 44.dp).padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Surface(
-            shape = RoundedCornerShape(18.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                CircularProgressIndicator(
-                    strokeWidth = 2.dp,
-                    modifier = Modifier.size(16.dp),
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("思考中...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
-}

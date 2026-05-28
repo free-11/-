@@ -1,6 +1,8 @@
 package com.example.myapplication1.api
 
 import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -33,5 +35,62 @@ object RetrofitClient {
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(ApiService::class.java)
+    }
+
+    fun streamAiRecommend(
+        userId: Long,
+        message: String,
+        onChunk: (String) -> Unit,
+        onComplete: (String) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        Thread {
+            try {
+                val json = """{"userId":"$userId","message":"${message.replace("\"", "\\\"")}"}"""
+                val request = Request.Builder()
+                    .url("${BASE_URL}api/ai/recommend/stream")
+                    .post(json.toRequestBody(okhttp3.MediaType.parse("application/json")))
+                    .build()
+
+                val response = okHttpClient.newCall(request).execute()
+                if (!response.isSuccessful) {
+                    onError("HTTP ${response.code()}: ${response.body?.string()}")
+                    return@Thread
+                }
+
+                val body = response.body ?: run { onError("空响应"); return@Thread }
+                val reader = body.string().reader()
+                var fullText = ""
+
+                reader.forEachLine { line ->
+                    line.trim().let { trimmed ->
+                        if (trimmed.startsWith("data:")) {
+                            val data = trimmed.substring(5).trim()
+                            if (data == "[DONE]") {
+                                onComplete(fullText)
+                                return@forEachLine
+                            }
+                            try {
+                                val parts = data.split(":", limit = 2)
+                                if (parts.size == 2 && parts[0].trim() == "chunk") {
+                                    val chunk = parts[1].trim()
+                                    fullText += chunk
+                                    onChunk(chunk)
+                                } else if (parts.size == 2 && parts[0].trim() == "done") {
+                                    onComplete(fullText)
+                                } else if (parts.size == 2 && parts[0].trim() == "error") {
+                                    onError(parts[1].trim())
+                                }
+                            } catch (_: Exception) {}
+                        }
+                    }
+                }
+
+                if (fullText.isNotEmpty()) onComplete(fullText)
+
+            } catch (e: Exception) {
+                onError(e.message ?: "未知错误")
+            }
+        }.start()
     }
 }

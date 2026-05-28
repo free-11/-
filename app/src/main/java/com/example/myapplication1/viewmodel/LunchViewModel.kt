@@ -57,6 +57,9 @@ class LunchViewModel : ViewModel() {
     private val _isAiThinking = MutableStateFlow(false)
     val isAiThinking: StateFlow<Boolean> = _isAiThinking
 
+    private val _streamingContent = MutableStateFlow("")
+    val streamingContent: StateFlow<String> = _streamingContent
+
     fun loadLunchList(userId: Long) {
         viewModelScope.launch {
             _isLoading.value = true
@@ -280,29 +283,26 @@ class LunchViewModel : ViewModel() {
     }
 
     fun aiRecommend(userId: Long, message: String) {
-        viewModelScope.launch {
-            _isAiThinking.value = true
-            _chatMessages.value = _chatMessages.value + ChatMessage("user", message)
-            _errorMessage.value = null
+        _isAiThinking.value = true
+        _chatMessages.value = _chatMessages.value + ChatMessage("user", message) + ChatMessage("assistant", "")
+        _streamingContent.value = ""
+        _errorMessage.value = null
 
-            try {
-                val response = RetrofitClient.api.aiRecommend(
-                    mapOf("userId" to userId.toString(), "message" to message)
-                )
-                if (response.code == 200 && response.data != null) {
-                    _chatMessages.value = _chatMessages.value + ChatMessage("assistant", response.data!!)
-                } else {
-                    _errorMessage.value = response.message ?: "AI 推荐失败"
-                    _chatMessages.value = _chatMessages.value + ChatMessage("assistant", "抱歉，推荐服务暂时不可用，请稍后再试 🙏")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "AI推荐失败", e)
-                _errorMessage.value = errorMessage(e)
-                _chatMessages.value = _chatMessages.value + ChatMessage("assistant", "网络异常，请检查连接后重试")
-            } finally {
+        RetrofitClient.streamAiRecommend(
+            userId, message,
+            onChunk = { chunk ->
+                _streamingContent.value += chunk
+                _chatMessages.value = _chatMessages.value.dropLast(1) + ChatMessage("assistant", _streamingContent.value)
+            },
+            onComplete = { _isAiThinking.value = false },
+            onError = { error ->
                 _isAiThinking.value = false
+                _errorMessage.value = error
+                if (_streamingContent.value.isEmpty()) {
+                    _chatMessages.value = _chatMessages.value.dropLast(1) + ChatMessage("assistant", "抱歉，推荐服务暂时不可用，请稍后再试 🙏")
+                }
             }
-        }
+        )
     }
 
     fun clearChat() {

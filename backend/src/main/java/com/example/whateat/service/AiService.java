@@ -7,11 +7,15 @@ import com.example.whateat.model.LunchHistory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 
@@ -34,88 +38,143 @@ public class AiService {
         .connectTimeout(Duration.ofSeconds(30))
         .build();
 
-    public String recommend(Long userId, String userMessage) {
+    public String buildSystemPrompt(Long userId) {
         List<Lunch> lunchList = lunchMapper.findByUserId(userId);
         List<LunchHistory> historyList = lunchHistoryMapper.findByUserId(userId);
 
-        StringBuilder systemPrompt = new StringBuilder();
-        systemPrompt.append("你是一个专业的美食推荐助手，叫「美食小助手」。你的任务是根据用户的菜品库和饮食历史，给出个性化的美食推荐建议。\n\n");
-        systemPrompt.append("## 用户菜品库\n");
+        StringBuilder sb = new StringBuilder();
+        sb.append("你是一个专业的美食推荐助手，叫「美食小助手」。你的任务是根据用户的菜品库和饮食历史，给出个性化的美食推荐建议。\n\n");
+        sb.append("## 用户菜品库\n");
         if (lunchList.isEmpty()) {
-            systemPrompt.append("（用户还没有添加任何菜品）\n");
+            sb.append("（用户还没有添加任何菜品）\n");
         } else {
             for (Lunch lunch : lunchList) {
-                systemPrompt.append("- ").append(lunch.getName());
+                sb.append("- ").append(lunch.getName());
                 if (lunch.getDescription() != null && !lunch.getDescription().isEmpty()) {
-                    systemPrompt.append("（").append(lunch.getDescription()).append("）");
+                    sb.append("（").append(lunch.getDescription()).append("）");
                 }
                 if (lunch.getTags() != null && !lunch.getTags().isEmpty()) {
-                    systemPrompt.append(" [标签：").append(lunch.getTags()).append("]");
+                    sb.append(" [标签：").append(lunch.getTags()).append("]");
                 }
-                systemPrompt.append("\n");
+                sb.append("\n");
             }
         }
 
-        systemPrompt.append("\n## 最近饮食记录\n");
+        sb.append("\n## 最近饮食记录\n");
         if (historyList.isEmpty()) {
-            systemPrompt.append("（暂无记录）\n");
+            sb.append("（暂无记录）\n");
         } else {
             historyList.stream()
                 .limit(10)
-                .forEach(h -> systemPrompt.append("- ").append(h.getLunchName()).append("\n"));
+                .forEach(h -> sb.append("- ").append(h.getLunchName()).append("\n"));
         }
 
-        systemPrompt.append("\n## 回复要求\n");
-        systemPrompt.append("1. 用中文回复，语气友好自然\n");
-        systemPrompt.append("2. 根据用户的问题和其菜品库/历史给出有针对性的推荐\n");
-        systemPrompt.append("3. 如果用户没有明确问题，可以主动根据历史记录分析饮食习惯并给出建议\n");
-        systemPrompt.append("4. 回复控制在200字以内，简洁实用\n");
-        systemPrompt.append("5. 可以适当使用emoji增加趣味性\n");
+        sb.append("\n## 回复要求\n");
+        sb.append("1. 用中文回复，语气友好自然\n");
+        sb.append("2. 根据用户的问题和其菜品库/历史给出有针对性的推荐\n");
+        sb.append("3. 如果用户没有明确问题，可以主动根据历史记录分析饮食习惯并给出建议\n");
+        sb.append("4. 回复控制在200字以内，简洁实用\n");
+        sb.append("5. 可以适当使用emoji增加趣味性\n");
 
-        return callDeepSeek(systemPrompt.toString(), userMessage);
+        return sb.toString();
     }
 
-    private String callDeepSeek(String systemPrompt, String userMessage) {
-        try {
-            Map<String, Object> bodyMap = new LinkedHashMap<>();
-            bodyMap.put("model", model);
-            bodyMap.put("temperature", 0.7);
-            bodyMap.put("max_tokens", 500);
+    public SseEmitter streamRecommend(Long userId, String userMessage) {
+        SseEmitter emitter = new SseEmitter(120_000L);
 
-            List<Map<String, String>> messages = new ArrayList<>();
-            Map<String, String> sysMsg = new LinkedHashMap<>();
-            sysMsg.put("role", "system");
-            sysMsg.put("content", systemPrompt);
-            messages.add(sysMsg);
+        executor.execute(() -> {
+            try {
+                String systemPrompt = buildSystemPrompt(userId);
 
-            Map<String, String> userMsg = new LinkedHashMap<>();
-            userMsg.put("role", "user");
-            userMsg.put("content", userMessage);
-            messages.add(userMsg);
+                Map<String, Object> bodyMap = new LinkedHashMap<>();
+                bodyMap.put("model", model);
+                bodyMap.put("temperature", 0.7);
+                bodyMap.put("max_tokens", 500);
+                bodyMap.put("stream", true);
 
-            bodyMap.put("messages", messages);
+                List<Map<String, String>> messages = new ArrayList<>();
+                Map<String, String> sysMsg = new LinkedHashMap<>();
+                sysMsg.put("role", "system");
+                sysMsg.put("content", systemPrompt);
+                messages.add(sysMsg);
 
-            String jsonBody = toJsonString(bodyMap);
+                Map<String, String> userMsg = new LinkedHashMap<>();
+                userMsg.put("role", "user");
+                userMsg.put("content", userMessage);
+                messages.add(userMsg);
 
-            HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("https://api.deepseek.com/v1/chat/completions"))
-                .header("Content-Type", "application/json")
-                .header("Authorization", "Bearer " + apiKey)
-                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                .timeout(Duration.ofSeconds(60))
-                .build();
+                bodyMap.put("messages", messages);
 
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                String jsonBody = toJsonString(bodyMap);
 
-            if (response.statusCode() != 200) {
-                throw new RuntimeException("DeepSeek API 调用失败: " + response.statusCode());
+                HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.deepseek.com/v1/chat/completions"))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + apiKey)
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                    .timeout(Duration.ofSeconds(90))
+                    .build();
+
+                HttpResponse<java.io.InputStream> response = httpClient.send(
+                    request,
+                    HttpResponse.BodyHandlers.ofInputStream()
+                );
+
+                if (response.statusCode() != 200) {
+                    String errorBody = new String(response.body().readAllBytes(), StandardCharsets.UTF_8);
+                    emitter.send(SseEmitter.event().name("error").data(errorBody));
+                    emitter.complete();
+                    return;
+                }
+
+                BufferedReader reader = new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8));
+                String line;
+                StringBuilder fullContent = new StringBuilder();
+
+                while ((line = reader.readLine()) != null) {
+                    line = line.trim();
+                    if (!line.startsWith("data:")) continue;
+
+                    String data = line.substring(5).trim();
+
+                    if ("[DONE]".equals(data)) {
+                        emitter.send(SseEmitter.event().name("done").data(fullContent.toString()));
+                        emitter.complete();
+                        return;
+                    }
+
+                    try {
+                        Map chunk = parseJson(data);
+                        List choices = (List) chunk.get("choices");
+                        if (choices == null || choices.isEmpty()) continue;
+
+                        Map choice = (Map) choices.get(0);
+                        Map delta = (Map) choice.get("delta");
+                        if (delta == null) continue;
+
+                        Object contentObj = delta.get("content");
+                        if (contentObj != null && !contentObj.toString().isEmpty()) {
+                            fullContent.append(contentObj.toString());
+                            emitter.send(SseEmitter.event().name("chunk").data(contentObj.toString()));
+                        }
+                    } catch (Exception ignored) {}
+                }
+
+                emitter.send(SseEmitter.event().name("done").data(fullContent.toString()));
+                emitter.complete();
+
+            } catch (Exception e) {
+                try {
+                    emitter.send(SseEmitter.event().name("error").data(e.getMessage()));
+                    emitter.completeWithError(e);
+                } catch (Exception ignored) {}
             }
+        });
 
-            return extractContent(response.body());
-        } catch (Exception e) {
-            throw new RuntimeException("AI 推荐服务异常: " + e.getMessage());
-        }
+        return emitter;
     }
+
+    private final java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newCachedThreadPool();
 
     private static String toJsonString(Map<String, Object> map) {
         StringBuilder sb = new StringBuilder("{");
@@ -125,19 +184,6 @@ public class AiService {
             first = false;
             sb.append("\"").append(entry.getKey()).append("\":");
             appendValue(sb, entry.getValue());
-        }
-        sb.append("}");
-        return sb.toString();
-    }
-
-    private static String toJsonStringRaw(Map map) {
-        StringBuilder sb = new StringBuilder("{");
-        boolean first = true;
-        for (Object keyObj : map.keySet()) {
-            if (!first) sb.append(",");
-            first = false;
-            sb.append("\"").append(escapeJson(String.valueOf(keyObj))).append("\":");
-            appendValue(sb, map.get(keyObj));
         }
         sb.append("}");
         return sb.toString();
@@ -163,26 +209,21 @@ public class AiService {
         }
     }
 
-    private static String escapeJson(String s) {
-        return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
+    private static String toJsonStringRaw(Map map) {
+        StringBuilder sb = new StringBuilder("{");
+        boolean first = true;
+        for (Object keyObj : map.keySet()) {
+            if (!first) sb.append(",");
+            first = false;
+            sb.append("\"").append(escapeJson(String.valueOf(keyObj))).append("\":");
+            appendValue(sb, map.get(keyObj));
+        }
+        sb.append("}");
+        return sb.toString();
     }
 
-    @SuppressWarnings("unchecked")
-    private static String extractContent(String responseBody) {
-        try {
-            Map result = parseJson(responseBody);
-            List choices = (List) result.get("choices");
-            if (choices != null && !choices.isEmpty()) {
-                Map choice = (Map) choices.get(0);
-                Map message = (Map) choice.get("message");
-                if (message != null) {
-                    return (String) message.get("content");
-                }
-            }
-            throw new RuntimeException("DeepSeek 返回格式异常");
-        } catch (Exception e) {
-            throw new RuntimeException("解析 DeepSeek 响应失败: " + e.getMessage());
-        }
+    private static String escapeJson(String s) {
+        return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
     }
 
     private static Map parseJson(String json) {
