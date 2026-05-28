@@ -23,7 +23,13 @@ import java.util.*;
 public class AiService {
 
     @Value("${deepseek.api-key:}")
-    private String apiKey;
+    private String configApiKey;
+
+    private String getApiKey() {
+        String envKey = System.getenv("DEEPSEEK_API_KEY");
+        if (envKey != null && !envKey.isEmpty()) return envKey;
+        return configApiKey != null ? configApiKey : "";
+    }
 
     @Value("${deepseek.model:deepseek-chat}")
     private String model;
@@ -84,7 +90,7 @@ public class AiService {
 
         executor.execute(() -> {
             try {
-                if (apiKey == null || apiKey.isEmpty()) {
+                if (getApiKey().isEmpty()) {
                     emitter.send(SseEmitter.event().name("error").data("未配置 DeepSeek API Key，请在环境变量中设置 DEEPSEEK_API_KEY"));
                     emitter.complete();
                     return;
@@ -116,7 +122,7 @@ public class AiService {
                 HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create("https://api.deepseek.com/v1/chat/completions"))
                     .header("Content-Type", "application/json")
-                    .header("Authorization", "Bearer " + apiKey)
+                    .header("Authorization", "Bearer " + getApiKey())
                     .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                     .timeout(Duration.ofSeconds(90))
                     .build();
