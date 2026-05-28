@@ -22,7 +22,7 @@ import java.util.*;
 @Service
 public class AiService {
 
-    @Value("${deepseek.api-key}")
+    @Value("${deepseek.api-key:}")
     private String apiKey;
 
     @Value("${deepseek.model:deepseek-chat}")
@@ -84,6 +84,12 @@ public class AiService {
 
         executor.execute(() -> {
             try {
+                if (apiKey == null || apiKey.isEmpty()) {
+                    emitter.send(SseEmitter.event().name("error").data("未配置 DeepSeek API Key，请在环境变量中设置 DEEPSEEK_API_KEY"));
+                    emitter.complete();
+                    return;
+                }
+
                 String systemPrompt = buildSystemPrompt(userId);
 
                 Map<String, Object> bodyMap = new LinkedHashMap<>();
