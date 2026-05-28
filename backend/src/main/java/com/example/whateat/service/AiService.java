@@ -18,7 +18,7 @@ import java.util.*;
 @Service
 public class AiService {
 
-    @Value("${deepseek.api-key:sk-7a90ecf965554ff1bc8a993271e03302}")
+    @Value("${deepseek.api-key}")
     private String apiKey;
 
     @Value("${deepseek.model:deepseek-chat}")
