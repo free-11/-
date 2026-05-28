@@ -126,9 +126,11 @@ fun AiRecommendScreen(
                     contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(chatMessages, key = { msg -> "${msg.role}-${msg.content.hashCode()}" }) { index ->
-                        val msg = chatMessages[index]
-                        val isLastAssistant = msg.role == "assistant" && index == chatMessages.lastIndex
+                    items(
+                        items = chatMessages,
+                        key = { msg -> "${msg.role}-${msg.content.hashCode()}" }
+                    ) { msg ->
+                        val isLastAssistant = msg.role == "assistant" && chatMessages.lastIndex == chatMessages.indexOf(msg)
                         ChatBubble(
                             message = msg,
                             isUser = msg.role == "user",
