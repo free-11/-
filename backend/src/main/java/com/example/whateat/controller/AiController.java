@@ -15,7 +15,7 @@ public class AiController {
     @Autowired
     private AiService aiService;
 
-    @PostMapping(value = "/recommend/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @PostMapping("/recommend/stream")
     public SseEmitter recommendStream(@RequestBody Map<String, String> request) {
         Long userId = Long.valueOf(request.getOrDefault("userId", "0"));
         String message = request.getOrDefault("message", "今天吃什么？给我一些建议");

@@ -61,34 +61,32 @@ object RetrofitClient {
                 }
 
                 val body = response.body ?: run { onError("空响应"); return@Thread }
-                val reader = body.string().reader()
+                val source = body.source()
+                var currentEvent = ""
                 var fullText = ""
 
-                reader.forEachLine { line ->
-                    line.trim().let { trimmed ->
-                        if (trimmed.startsWith("data:")) {
+                source.use {
+                    while (!source.exhausted()) {
+                        val line = it.readUtf8Line() ?: continue
+                        val trimmed = line.trim()
+                        if (trimmed.isEmpty()) continue
+
+                        if (trimmed.startsWith("event:")) {
+                            currentEvent = trimmed.substring(6).trim()
+                        } else if (trimmed.startsWith("data:")) {
                             val data = trimmed.substring(5).trim()
-                            if (data == "[DONE]") {
-                                onComplete(fullText)
-                                return@forEachLine
-                            }
-                            try {
-                                val parts = data.split(":", limit = 2)
-                                if (parts.size == 2 && parts[0].trim() == "chunk") {
-                                    val chunk = parts[1].trim()
-                                    fullText += chunk
-                                    onChunk(chunk)
-                                } else if (parts.size == 2 && parts[0].trim() == "done") {
-                                    onComplete(fullText)
-                                } else if (parts.size == 2 && parts[0].trim() == "error") {
-                                    onError(parts[1].trim())
+                            when (currentEvent) {
+                                "chunk" -> {
+                                    fullText += data
+                                    onChunk(data)
                                 }
-                            } catch (_: Exception) {}
+                                "done" -> onComplete(data)
+                                "error" -> onError(data)
+                            }
+                            currentEvent = ""
                         }
                     }
                 }
-
-                if (fullText.isNotEmpty()) onComplete(fullText)
 
             } catch (e: Exception) {
                 onError(e.message ?: "未知错误")
