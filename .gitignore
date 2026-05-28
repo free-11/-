@@ -1,0 +1,40 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Backend
+backend/target/
+backend/*.jar
+backend/*.log
+backend/.mvn/
+
+# IDE
+.idea/
+*.iws
+*.ipr
+out/
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Env (contains API keys - should not be committed)
+.env
+*.env
+
+# Android specific
+app/build/
+app/release/
+local.properties
