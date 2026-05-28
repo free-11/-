@@ -125,7 +125,7 @@ fun AiRecommendScreen(
                     contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(chatMessages, key = "${it.role}-${it.content.hashCode()}") { msg ->
+                    items(chatMessages, key = { msg -> "${msg.role}-${msg.content.hashCode()}" }) { msg ->
                         ChatBubble(message = msg, isUser = msg.role == "user")
                     }
 
@@ -219,10 +219,10 @@ fun ChatBubble(message: LunchViewModel.ChatMessage, isUser: Boolean) {
 
         Surface(
             shape = RoundedCornerShape(
-                topLeft = 18.dp,
-                topRight = 18.dp,
-                bottomLeft = if (isUser) 18.dp else 4.dp,
-                bottomRight = if (isUser) 4.dp else 18.dp
+                topStart = 18.dp,
+                topEnd = 18.dp,
+                bottomStart = if (isUser) 18.dp else 4.dp,
+                bottomEnd = if (isUser) 4.dp else 18.dp
             ),
             color = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
             shadowElevation = 0.5.dp
